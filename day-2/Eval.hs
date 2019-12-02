@@ -1,5 +1,10 @@
 module Eval where
 
+split :: (Eq a) => a -> [a] -> [[a]]
+split _ [] = []
+split c xs = let (begin, end) = span (/=c) xs
+             in begin : (split c $ drop 1 end)
+
 setVal :: Int -> a -> [a] -> [a]
 setVal n x xs = take n xs ++ [x] ++ drop (n + 1) xs
 
@@ -18,3 +23,6 @@ eval' p xs = case xs !! p of
 
 eval :: [Int] -> Either String [Int]
 eval = eval' 0
+
+evalStr :: ([Int] -> Either String [Int]) -> String -> Either String [Int]
+evalStr evalr str = evalr $ map read $ split ',' str
