@@ -12,5 +12,7 @@ main = do
   case parseWires "" input of
     Right wires -> 
       do
-        print $ minimum $ filter (/=0) $ map (manhattan (0, 0) . fst . fst) $ uncurry findIntersections wires
+        -- sequence $ map print $ tracePath (fst wires) 0 (0, 0)
+        -- sequence $ map print $ uncurry findIntersections wires
+        print $ minimum $ map (\(a, b) -> snd a + snd b) $ uncurry findIntersections wires
     Left e -> print e

@@ -1,11 +1,13 @@
-module Move (parseWires, Move (..), Wire, manhattan, tracePath, findIntersections) where
+module Move (parseWires, Move (..), Wire, Pos, manhattan, tracePath, findIntersections) where
 
 import Text.ParserCombinators.Parsec
-import Data.List (intersect)
+import Data.List (intersectBy)
 
 data Move = U Integer | D Integer | L Integer | R Integer deriving Show
 
 type Wire = [Move]
+
+type Pos = (Integer, Integer)
 
 wirePair :: GenParser Char st (Wire, Wire)
 wirePair = do
@@ -40,15 +42,25 @@ eol =   try (string "\n\r")
 parseWires :: SourceName -> String -> Either ParseError (Wire, Wire)
 parseWires = parse wirePair
 
-manhattan :: (Integer, Integer) -> (Integer, Integer) -> Integer
+manhattan :: Pos -> Pos -> Integer
 manhattan (x,y) (i,j) = abs $ x - i + y - j
 
-tracePath :: (Integer, Integer) -> Wire -> [(Integer, Integer)]
-tracePath point [] = []
-tracePath (x, y) (U n:ms) = let ps = [(x, y + i) | j <- [0..n - 1], let i = n - j] in ps ++ tracePath (head ps) ms
-tracePath (x, y) (D n:ms) = let ps = [(x, y - i) | j <- [0..n - 1], let i = n - j] in ps ++ tracePath (head ps) ms
-tracePath (x, y) (L n:ms) = let ps = [(x - i, y) | j <- [0..n - 1], let i = n - j] in ps ++ tracePath (head ps) ms
-tracePath (x, y) (R n:ms) = let ps = [(x + i, y) | j <- [0..n - 1], let i = n - j] in ps ++ tracePath (head ps) ms
+makeSteps :: Integer -> Integer -> [Integer]
+makeSteps s n = [s + (n - i) | i <- [0..n-1]]
 
-findIntersections :: Wire -> Wire -> [(Integer, Integer)]
-findIntersections w1 w2 = intersect (tracePath (0, 0) w1) (tracePath (0, 0) w2)
+tracePath :: Wire -> Integer -> Pos-> [(Pos, Integer)]
+tracePath [] _ _ = []
+tracePath (U n:ms) s (x, y) = let ps = [(x, y + i) | j <- [0..n - 1], let i = n - j] in zip ps (makeSteps s n) ++ tracePath ms (s + n) (head ps)
+tracePath (D n:ms) s (x, y) = let ps = [(x, y - i) | j <- [0..n - 1], let i = n - j] in zip ps (makeSteps s n) ++ tracePath ms (s + n) (head ps)
+tracePath (L n:ms) s (x, y) = let ps = [(x - i, y) | j <- [0..n - 1], let i = n - j] in zip ps (makeSteps s n) ++ tracePath ms (s + n) (head ps)
+tracePath (R n:ms) s (x, y) = let ps = [(x + i, y) | j <- [0..n - 1], let i = n - j] in zip ps (makeSteps s n) ++ tracePath ms (s + n) (head ps)
+
+intersectPairs :: (a -> a -> Bool) -> [a] -> [a] -> [(a, a)]
+intersectPairs _ [] _  = []
+intersectPairs _ _  [] = []
+intersectPairs p xs ys = [(x, y) | x <- xs, y <- filter (p x) ys]
+
+findIntersections :: Wire -> Wire -> [((Pos, Integer), (Pos, Integer))]
+findIntersections w1 w2 = let p1 = tracePath w1 0 (0, 0)
+                              p2 = tracePath w2 0 (0, 0)
+                          in intersectPairs (\m n -> fst m == fst n) p1 p2
