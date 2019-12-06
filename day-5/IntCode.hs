@@ -16,10 +16,14 @@ incrementPtr _ (Stop mem) = Stop mem
 incrementPtr _ (Fail reason) = Fail reason
 incrementPtr n (Success ptr mem) = Success (ptr + n) mem
 
-data Op = Add    Int Int Int Int Int Int 
-        | Mul    Int Int Int Int Int Int
-        | Input  Int     Int
-        | Output Int     Int
+data Op = Add       Int Int Int Int Int Int 
+        | Mul       Int Int Int Int Int Int
+        | Input     Int         Int
+        | Output    Int         Int
+        | JumpTrue  Int Int     Int Int
+        | JumpFalse Int Int     Int Int
+        | LessThan  Int Int Int Int Int Int
+        | Equals    Int Int Int Int Int Int
         | Halt
         deriving Show
 
@@ -40,10 +44,8 @@ eval s@(Success ptr mem) = do
   case op' of
     Left reason -> return $ Fail reason
     Right op -> do
-      let skip = numArgsOf op + 1
       s' <- evalOp op s
-      let s'' = incrementPtr skip s'
-      eval s''
+      eval s'
 
 
 createOp :: Int -> [Int] -> [Int] -> Either String Op
@@ -58,6 +60,18 @@ createOp 3 _ _ = Left "Wrong number of argument modes or argument values to inpu
 
 createOp 4 (m:[]) (i:[]) = Right $ Output m i
 createOp 4 _ _ = Left "Wrong number of argument modes or argument values to output instruction"
+
+createOp 5 (m:n:[]) (c:o:[]) = Right $ JumpTrue m n c o
+createOp 5 _ _ = Left "Wrong number of argument modes or argument values to jump-if-true instruction"
+
+createOp 6 (m:n:[]) (c:o:[]) = Right $ JumpFalse m n c o
+createOp 6 _ _ = Left "Wrong number of argument modes or argument values to jump-if-false instruction"
+
+createOp 7 (m:n:q:[]) (l:r:o:[]) = Right $ LessThan m n q l r o
+createOp 7 _ _ = Left "Wrong number of argument modes or argument values to less-than instruction"
+
+createOp 8 (m:n:q:[]) (l:r:o:[]) = Right $ Equals m n q l r o
+createOp 8 _ _ = Left "Wrong number of argument modes or argument values to equals instruction"
 
 createOp 99 [] [] = Right $ Halt
 createOp 99 _ _ = Left "Wrong number of argument modes or argument values to halt instruction"
@@ -82,15 +96,23 @@ numArgsFor 1 = 3 -- Add
 numArgsFor 2 = 3 -- Multiply
 numArgsFor 3 = 1 -- Input
 numArgsFor 4 = 1 -- Output
+numArgsFor 5 = 2
+numArgsFor 6 = 2
+numArgsFor 7 = 3
+numArgsFor 8 = 3
 numArgsFor 99 = 0 -- Halt
 numArgsFor _ = 0 -- Unknown
 
-numArgsOf :: Op -> Int
-numArgsOf (Add _ _ _ _ _ _) = 3
-numArgsOf (Mul _ _ _ _ _ _) = 3
-numArgsOf (Input _ _) = 1
-numArgsOf (Output _ _) = 1
-numArgsOf Halt = 0
+-- numArgsOf :: Op -> Int
+-- numArgsOf (Add _ _ _ _ _ _) = 3
+-- numArgsOf (Mul _ _ _ _ _ _) = 3
+-- numArgsOf (Input _ _) = 1
+-- numArgsOf (Output _ _) = 1
+-- numArgsOf (JumpTrue _ _ _ _) = 2
+-- numArgsOf (JumpFalse _ _ _ _) = 2
+-- numArgsOf (LessThan _ _ _ _ _ _) = 3
+-- numArgsOf (Equals _ _ _ _ _ _) = 3
+-- numArgsOf Halt = 0
 
 evalOp :: Op -> EvalState -> IO EvalState
 evalOp _ (Stop mem) = return $ Stop mem
@@ -100,24 +122,50 @@ evalOp (Add lm rm om lv rv ov) (Success ptr mem) =
   let l = resolveArg lm lv mem
       r = resolveArg rm rv mem
       o = Right ov
-  in return $ eitherToEval ptr $ setValL o (liftA2 (+) l r) (Right mem)
+  in return $ eitherToEval (ptr + 4) $ setValL o (liftA2 (+) l r) (Right mem)
 
 evalOp (Mul lm rm om lv rv ov) (Success ptr mem) =
   let l = resolveArg lm lv mem
       r = resolveArg rm rv mem
       o = Right ov
-  in return $ eitherToEval ptr $ setValL o (liftA2 (*) l r) (Right mem)
+  in return $ eitherToEval (ptr + 4) $ setValL o (liftA2 (*) l r) (Right mem)
 
 evalOp (Input om ov) (Success ptr mem) =
   let o = Right ov
   in  do
         v <- putStr "> " >> getLine
-        return $ eitherToEval ptr $ setValL o (Right $ read v) (Right mem)
+        return $ eitherToEval (ptr + 2) $ setValL o (Right $ read v) (Right mem)
 
 evalOp (Output im iv) (Success ptr mem) =
   case resolveArg im iv mem of
     Left e -> return $ Fail e
-    Right i -> print i >> (return $ Success ptr mem)
+    Right i -> print i >> (return $ Success (ptr + 2) mem)
+
+evalOp (JumpTrue cm jm cv jv) (Success ptr mem) =
+  let c = resolveArg cm cv mem
+      j = resolveArg jm jv mem
+  in  if either (const 0) id c /= 0
+        then return $ Success (either (const ptr) id j) mem
+        else return $ Success (ptr + 3) mem
+
+evalOp (JumpFalse cm jm cv jv) (Success ptr mem) =
+  let c = resolveArg cm cv mem
+      j = resolveArg jm jv mem
+  in  if either (const 1) id c == 0
+        then return $ Success (either (const ptr) id j) mem
+        else return $ Success (ptr + 3) mem
+
+evalOp (LessThan lm rm _ lv rv ov) (Success ptr mem) =
+  let l = resolveArg lm lv mem
+      r = resolveArg rm rv mem
+      o = Right ov
+  in  return $ eitherToEval (ptr + 4) $ setValL o (Right $ if either (const False) id (liftA2 (<) l r) then 1 else 0) (Right mem)
+
+evalOp (Equals lm rm _ lv rv ov) (Success ptr mem) =
+  let l = resolveArg lm lv mem
+      r = resolveArg rm rv mem
+      o = Right ov
+  in  return $ eitherToEval (ptr + 4) $ setValL o (Right $ if either (const False) id (liftA2 (==) l r) then 1 else 0) (Right mem)
 
 evalOp Halt (Success ptr mem) = return $ Stop mem
 
